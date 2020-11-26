@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from model.basemodel import BaseModel
-from model.network.components import encoder_s,encoder_e,decoder_se
+from model.network.components import Encoder_S,Encoder_E,Decoder_SE
 from model.loss import vgg_style_loss
 import utils
 import numpy as np
@@ -10,10 +10,11 @@ from PIL import Image
 class DISE(BaseModel):
     def __init__(self,opt):
         BaseModel.__init__(self,opt)
-        self.net_names=['E_s','E_e','Dec']
-        self.net_E_s=encoder_s(norm_layer='LN')
-        self.net_E_e=encoder_e(inc=3,depth=4,outc=8,ndf=64,usekl=opt.usekl)
-        self.net_Dec=decoder_se(e_inc=8,norm_layer='LN')
+        self.net_names=['E_s','E_e','G_se']
+        self.net_E_s=Encoder_S(n_downsample=3,ndf=64,norm_layer='LN')
+        self.net_E_e=Encoder_E(inc=3,n_downsample=4,outc=self.opt.dimen_e,ndf=64,usekl=opt.kl)
+        self.net_G_se=Decoder_SE(s_inc=self.net_E_s.outc,e_inc=self.opt.dimen_e,
+                                        n_upsample=self.net_E_s.n_downsample,norm_layer='LN')
         if self.isTrain:
             self.l1loss=nn.L1Loss()
             self.set_Adam_optims(self.net_names)
@@ -23,7 +24,8 @@ class DISE(BaseModel):
     @staticmethod
     def modify_options(parser):
         opt, _ =parser.parse_known_args()
-        parser.add_argument('--usekl', action='store_false', help='bool for kl loss in E_e')    
+        parser.add_argument('--usekl', action='store_false', help='bool for kl loss in E_e') 
+        parser.add_argument('--dimen_e', type=int,default=8, help='dimension for exposure vector')
         if opt.phase=='train':
             parser.add_argument('--lr', type=float, default=0.0001, help='learning rate ')
             parser.add_argument('--lambda_recon', type=float, default=50.0, help='weight for recon loss')
