@@ -13,8 +13,8 @@ class RECO(BaseModel):
         BaseModel.__init__(self,opt)
         self.net_names=['G']
         self.net_G=Unet(inchannel=3,outchannel=3,
-                        ndf=64,enc_blocks=3,dec_blocks=3,depth=3,
-                        concat=self.opt.concat,bilinear=self.opt.bilinear,norm_layer='LN')
+                        ndf=64,enc_blocks=2,dec_blocks=2,depth=3,
+                        bilinear=self.opt.bilinear,norm_layer='LN')
         if self.isTrain:
             self.loss_names=['G_ad_gen','D','G','G_style','G_scene']
             self.net_names+=['D']
@@ -27,7 +27,6 @@ class RECO(BaseModel):
     @staticmethod
     def modify_options(parser):
         opt, _ =parser.parse_known_args()
-        parser.add_argument('--concat',  action='store_true', help='bool for using concat or add')
         parser.add_argument('--bilinear',  action='store_true', help='bool for using bilinear or convtranspose ')
         if opt.phase=='train':
             parser.add_argument('--lr', type=float, default=0.0001, help='learning rate ')
