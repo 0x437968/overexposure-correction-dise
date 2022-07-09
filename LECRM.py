@@ -23,7 +23,7 @@ class CameraModel():
 
 	def CRF(self,E):
 		return np.exp(self.param[1]*(1-E**self.param[0]))
-	def adjust(self,im,k,round_n=True):
+	def adjust(self,im,k,round_n=False):
 		k=np.tile(k,im.shape).astype(np.float32)
 		out=self.BTF(im,k)
 		out[out>1.0]=1.0
