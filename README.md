@@ -1,7 +1,6 @@
 # Over-exposure Correction via Exposure and Scene Information Disentanglement
 
-Pytorch implementtation of the paper [Over-exposure Correction via Exposure and Scene Information Disentanglement](https://openaccess.thecvf.com/content/ACCV2020/papers/Cao_Over-exposure_Correction_via_Exposure_and_Scene_Information_Disentanglement_ACCV_2020_paper.pdf).
-
+Pytorch implementation of the paper [Over-exposure Correction via Exposure and Scene Information Disentanglement](https://openaccess.thecvf.com/content/ACCV2020/papers/Cao_Over-exposure_Correction_via_Exposure_and_Scene_Information_Disentanglement_ACCV_2020_paper.pdf).
 contact yuhuicao@pku.edu.cn
 
 ## Usage 
@@ -14,12 +13,12 @@ In our experiments, outdoor images and portrait images are from [Place365 datase
 
 To train the model, run the following command line in the source code directory. For calculating style loss, VGG19 model can be downloaded in [here](https://download.pytorch.org/models/vgg19-dcbb9e9d.pth). You may set other parameters based on your experiment setting.
 
-For the disentanglement model, the exposure adjust process has be embedded into data_cfg.py and you can place your original data into your data directory to train the model:
+For disentanglement model, the exposure adjust process has be embedded into data_cfg.py and you can place your original data into your data directory to train the model:
 ```bash
 python main.py -model dise -name experiment_name -phase train -data_root yourdataroot --dir_in yourdatadir    
 ```
 
-For the recovery model, you can run LECRM.py to generate overexposed images and run main.py to train the model:
+For recovery model, you can run LECRM.py to generate overexposed images and run main.py to train the model:
 ```bash
 python main.py -model reco -name experiment_name -phase train -data_root yourdataroot --dir_in overdir --dir_gt gtdir   
 ```
