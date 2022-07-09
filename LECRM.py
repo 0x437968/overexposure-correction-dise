@@ -5,8 +5,8 @@ import math
 import random
 import os 
 
-src_dir='./gt'
-target_dir='./results'
+src_dir=''
+target_dir=''
 
 class CameraModel():
 	def __init__(self,param=[-0.3293,1.1258]):

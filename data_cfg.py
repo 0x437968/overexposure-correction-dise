@@ -9,23 +9,16 @@ import torchvision.transforms as transforms
 from LECRM import CameraModel
 
 class Project_Dataset(Dataset):
-
     def __init__(self, opt):
         self.patch_size=opt.patch_size
         self.opt=opt
         self.train=opt.isTrain 
         self.path = self.makelist()
-        # transform_list=[]
-        # # transform_list.append(transforms.Resize(size=self.load_size))
-        # transform_list.append(transforms.ToTensor())
-        # transform_list.append(transforms.Normalize((0.5, 0.5, 0.5),(0.5, 0.5, 0.5)))
-        # self.trans = transforms.Compose(transform_list) 
 
     def __getitem__(self, index):
         data=dict()        
         if self.train:
             if self.opt.model == 'dise':
-
                 im_path= self.path[index]
                 ext=os.path.splitext(im_path)[-1]
                 n1=os.path.basename(im_path).replace(ext,'_1'+ext)
@@ -40,7 +33,6 @@ class Project_Dataset(Dataset):
                 im3 = im*2-1.0
                 data['imseq']=[im1,im2,im3]
                 data['nameseq']=[n1,n2,n3]
-                
             if self.opt.model == 'reco':
                 gt_path, over_path = self.path[index]
                 gt = utils.load_image(gt_path)*2-1.0

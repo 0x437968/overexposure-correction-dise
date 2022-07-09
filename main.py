@@ -39,7 +39,6 @@ if __name__ == '__main__':
             if epoch%opt.net_save_freq==0:
                 model.save_networks()
         print('End')
-
     if opt.phase=='test':
         print('Start test')
         for i,data in enumerate(data_loader,0):

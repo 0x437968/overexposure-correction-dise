@@ -38,8 +38,8 @@ class RECO(BaseModel):
             parser.add_argument('--gamma_gen', type=float, default=2.0, help='weight for generation loss')
             parser.add_argument('--scenepath',  default='./checkpoints/net_E_s.path', help='scene encoder path')
 
-            parser.add_argument('--dir_in',  default='over', help='over-exposure images diretory')
-            parser.add_argument('--dir_gt',  default='gt', help='ground truth images diretory')
+            parser.add_argument('--dir_in',  default='over', help='overexposed images diretory')
+            parser.add_argument('--dir_gt',  default='gt', help='ground-truth diretory')
         else:
             parser.add_argument('--dir_in',  default='test', help='test images diretory')
         return parser

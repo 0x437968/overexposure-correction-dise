@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from model.basemodel import BaseModel
-# from model.network.components import Encoder_S,Encoder_E,Decoder_SE
 from model.network.components import S_Encoder,SE_Decoder,E_Encoder
 from model.loss import vgg_style_loss
 import utils
@@ -88,8 +87,6 @@ class DISE(BaseModel):
 
     def backward_(self):
         #   scene constraint
-        # s_avr=(self.s1+self.s2+self.s3)/3
-        # self.loss_ident=(self.l1loss(self.s1,s_avr)+self.l1loss(self.s1,s_avr)+self.l1loss(self.s2,s_avr))*self.opt.lambda_ident
         self.loss_ident=(self.l1loss(self.s1,self.s3)+self.l1loss(self.s1,self.s2)+self.l1loss(self.s2,self.s3))*self.opt.lambda_ident
 
         #   style loss
