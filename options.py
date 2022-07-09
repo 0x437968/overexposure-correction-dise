@@ -9,22 +9,22 @@ class ProjectOptions():
         self.initialized = False
 
     def initialize(self):
-        self.parser.add_argument('-name', type=str, default='final', help='name of the experiment.')
+        self.parser.add_argument('-name', type=str, default='', help='name of the experiment.')
         self.parser.add_argument('-checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
-        self.parser.add_argument('-model',type=str,default='reco',help='model name')
+        self.parser.add_argument('-model',type=str,default='dise',help='model name')
         self.parser.add_argument('-phase',type=str,default='train',help='train or test')
         self.parser.add_argument('-gpu_idx', type=int, default=0, help='gpu index, -1 for CPU')
-        self.parser.add_argument('-data_root',  type=str,default='./images', help='data root')
+        self.parser.add_argument('-data_root',  type=str,default='./data', help='data root')
         self.parser.add_argument('-result_root', type=str, default='./results', help='root of saving results ')
         self.parser.add_argument('-print_net',action='store_true', help='bool for printing net')
 
     def add_train_options(self):
-        self.parser.add_argument('-patch_size', type=int, default=-1, help='crop size ,<1 for no crop')
+        self.parser.add_argument('-patch_size', type=int, default=256, help='crop size ,<1 for no crop')
         self.parser.add_argument('-batch_size',type=int,default=4,help='train batch size')
         self.parser.add_argument('-print_freq',  type=int, default=10, help='loss print frequency')
         self.parser.add_argument('-net_save_freq', type=int, default=1,help='epochs for saving net')
         self.parser.add_argument('-im_save_freq', type=int, default=2000, help=' saving image frequency for train phase')
-        self.parser.add_argument('-epochs',  type=int, default=100, help='epochs of train')
+        self.parser.add_argument('-epochs',  type=int, default=200, help='epochs of train')
 
     def add_test_options(self):
         self.parser.add_argument('-patch_size', type=int, default=-1, help='crop size, <1 for no crop')

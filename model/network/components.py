@@ -2,131 +2,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import functools
+from torch.nn.utils.spectral_norm import spectral_norm as SpectralNorm
 import torchvision.models as models
-from model.network.base_function import ADAIN
-from torch.nn import init
-import utils
-import random
 
-##################################################################
 
-def get_norm_layer(type):
+#
+def get_Normlayer(type):
     if type=='LN':
         return functools.partial(LayerNorm,affine=True)
     if type=='IN':
-        return functools.partial(nn.InstanceNorm2d,affine=True)
+        return functools.partial(nn.InstanceNorm2d,affine=False)
     if type=='BN':
         return functools.partial(nn.BatchNorm2d,momentum=0.1,affine=True)
     return None
-
-def get_non_linearity(layer_type='relu'):
-  if layer_type == 'relu':
-    nl_layer = functools.partial(nn.ReLU)
-  elif layer_type == 'lrelu':
-    nl_layer = functools.partial(nn.LeakyReLU,0.1)
-  elif layer_type == 'selu':
-    nl_layer = functools.partial(nn.SELU)
-  else:
-    raise NotImplementedError('nonlinearity activitation [%s] is not found' % layer_type)
-  return nl_layer
-
-def block_nl_nll_conv(inc,outc,kernel_size=3,stride=1,padding=1,norm_layer='LN',non_linerity_layer='relu'):
-    norm=get_norm_layer(norm_layer)
-    nll=get_non_linearity(layer_type=non_linerity_layer)
-    model=[]
-    if norm is not None:
-        model.append(norm(inc))
-    model+=[nll(),nn.ReflectionPad2d(padding),nn.Conv2d(inc,outc,kernel_size=kernel_size,stride=stride,padding=0)]
-    return nn.Sequential(*model)
-
-def padding_conv(inc,outc,kernel_size=3,stride=1,padding=1):
-    model=[]
-    model+=[nn.ReflectionPad2d(padding),nn.Conv2d(inc,outc,kernel_size=kernel_size,stride=stride,padding=0)]
-    return nn.Sequential(*model)
-
-def block_conv_nl_nll(inc,outc,kernel_size=3,stride=1,padding=1,norm_layer='LN',non_linerity_layer='relu'):
-    norm=get_norm_layer(norm_layer)
-    nll=get_non_linearity(layer_type=non_linerity_layer)
-    model=[]
-    model.append(nn.ReflectionPad2d(padding))
-    model+=[nn.Conv2d(inc,outc,kernel_size=kernel_size,stride=stride,padding=0)]
-    if norm is not None:
-        model.append(norm(outc))
-    model+=[nll()]
-    return nn.Sequential(*model)
-
-class resblock_conv(nn.Module):
-    def __init__(self,inc,outc=None,hiddenc=None,norm_layer='LN',non_linerity_layer='relu'):
-        super(resblock_conv,self).__init__()
-        hiddenc=inc if hiddenc is None else hiddenc
-        outc=inc if outc is None else outc
-        norm=get_norm_layer(norm_layer)
-        nll=get_non_linearity(layer_type=non_linerity_layer)
-        model=[]
-        if norm is not None:
-            model.append(norm(inc))
-        model+=[nll(),nn.ReflectionPad2d(1),nn.Conv2d(inc,hiddenc,3,1,padding=0)]
-        if norm is not None:
-            model.append(norm(hiddenc))
-        model+=[nll(),nn.ReflectionPad2d(1),nn.Conv2d(hiddenc,outc,3,1,padding=0)]
-        self.bp=False
-        if outc!=inc:
-            self.bp=True
-            self.bypass=nn.Conv2d(inc,outc,1,1,0)
-        self.model=nn.Sequential(*model)
-
-    def forward(self,x):
-        residual=x
-        if self.bp:
-            out=self.model(x)+self.bypass(residual)
-        else:
-            out=self.model(x)+residual
-        return out
-
-class resblock_transconv(nn.Module):
-    def __init__(self,inc,outc,hiddenc=None,norm_layer='LN',non_linerity_layer='relu'):
-        super(resblock_transconv,self).__init__()
-        norm=get_norm_layer(norm_layer)
-        nll=get_non_linearity(layer_type=non_linerity_layer)
-        hiddenc=inc if hiddenc is None else hiddenc
-        self.model=[]
-        if norm is not None:
-            self.model.append(norm(inc))
-        self.model+=[nll(),
-            nn.Conv2d(inc,hiddenc,3,1,1)]
-        if norm is not None:
-            self.model.append(norm(hiddenc))
-        self.model+=[nll(),
-            nn.ConvTranspose2d(hiddenc,outc,3,2,1,1)]
-        self.model=nn.Sequential(*self.model)
-        self.bypass=nn.Sequential(nn.ConvTranspose2d(inc,outc,3,2,1,1))
-
-    def forward(self,x):
-        residual=x
-        out=self.model(x)+self.bypass(residual)
-        return out
-
-class resblock_upbilin(nn.Module):
-    def __init__(self,inc,outc=None,norm_layer='LN',non_linerity_layer='relu'):
-        super(resblock_upbilin,self).__init__()
-        norm=get_norm_layer(norm_layer)
-        nll=get_non_linearity(layer_type=non_linerity_layer)
-        outc=inc if outc is None else outc
-        self.model=[]
-        if norm is not None:
-            self.model.append(norm(inc))
-        self.model+=[nll(),
-            nn.Conv2d(inc,outc,3,1,1)]
-        if norm is not None:
-            self.model.append(norm(outc))
-        self.model+=[nll(),nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)]
-        self.model=nn.Sequential(*self.model)
-        self.bypass=nn.Sequential(nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True))
-
-    def forward(self,x):
-        residual=x
-        out=self.model(x)+self.bypass(residual)
-        return out
 
 class LayerNorm(nn.Module):
     def __init__(self, num_features, eps=1e-5, affine=True):
@@ -157,194 +45,121 @@ class LayerNorm(nn.Module):
             x = x * self.gamma.view(*shape) + self.beta.view(*shape)
         return x
 
-def initialize_weights(net,init_type='xavier', gain=0.02):
-    def init_func(m):
-        classname = m.__class__.__name__
-        if classname.find('BatchNorm2d') != -1:
-            if hasattr(m, 'weight') and m.weight is not None:
-                init.normal_(m.weight.data, 1.0, gain)
-            if hasattr(m, 'bias') and m.bias is not None:
-                init.constant_(m.bias.data, 0.0)
-        elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
-            if init_type == 'normal':
-                init.normal_(m.weight.data, 0.0, gain)
-            elif init_type == 'xavier':
-                init.xavier_normal_(m.weight.data, gain=gain)
-            elif init_type == 'xavier_uniform':
-                init.xavier_uniform_(m.weight.data, gain=1.0)
-            elif init_type == 'kaiming':
-                init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
-            elif init_type == 'orthogonal':
-                init.orthogonal_(m.weight.data, gain=gain)
-            elif init_type == 'none':  # uses pytorch's default init method
-                m.reset_parameters()
-            else:
-                raise NotImplementedError('initialization method [%s] is not implemented' % init_type)
-            if hasattr(m, 'bias') and m.bias is not None:
-                init.constant_(m.bias.data, 0.0)
-    for m in net.modules():
-        init_func(m)
-        
-###########################################################################
-class Layer_down(nn.Module):
-    def __init__(self, inchannel, outchannel, blocks=1,norm_layer='LN'):
-        super(Layer_down, self).__init__()
-        self.flatten = nn.Sequential(
-            get_norm_layer(norm_layer)(inchannel),
-            get_non_linearity()(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            padding_conv(inchannel,outchannel,3,1,1)
+def nolinear_Conv(inc,outc,kernel_size=3,stride=1,padding=1,norm_layer='IN'):
+    norm=get_Normlayer(norm_layer)
+    seq=[]
+    if type(norm)==type(None):
+        seq+=[nn.ReLU(),nn.ReflectionPad2d(padding),nn.Conv2d(inc,outc,kernel_size=kernel_size,stride=stride,padding=0)]
+    else:
+        seq+=[norm(inc),nn.ReLU(),nn.ReflectionPad2d(padding),nn.Conv2d(inc,outc,kernel_size=kernel_size,stride=stride,padding=0)]
+    return nn.Sequential(*seq)
+
+def conv_Nolinear(inc,outc,kernel_size=3,stride=1,padding=1,norm_layer='IN'):
+    norm=get_Normlayer(norm_layer)
+    seq=[]
+    seq.append(nn.ReflectionPad2d(padding))
+    if type(norm)==type(None):
+        seq+=[nn.Conv2d(inc,outc,kernel_size=kernel_size,stride=stride,padding=0)]
+    else:
+        seq+=[nn.Conv2d(inc,outc,kernel_size=kernel_size,stride=stride,padding=0),norm(outc)]
+    seq+=[nn.ReLU()]
+    return nn.Sequential(*seq)
+
+class ResBlock(nn.Module):
+    def __init__(self,dim,norm_layer='IN'):
+        super(ResBlock,self).__init__()
+        norm=get_Normlayer(norm_layer)
+        seq=[]
+        seq+=[norm(dim),nn.ReLU(),nn.ReflectionPad2d(1),nn.Conv2d(dim,dim,3,1,padding=0),norm(dim),nn.ReLU()]
+        seq+=[nn.ReflectionPad2d(1),nn.Conv2d(dim,dim,3,1,padding=0)]
+        self.seq=nn.Sequential(*seq)
+
+    def forward(self,x):
+        res=x
+        out=self.seq(x)+res
+        return out
+
+class Res_Conv_Block(nn.Module):
+    def __init__(self,inc,outc,hiddenc=None,norm_layer='IN'):
+        super(Res_Conv_Block,self).__init__()
+        hiddenc=inc if hiddenc is None else hiddenc
+        norm=get_Normlayer(norm_layer)
+        seq=[]
+        seq+=[norm(inc),nn.ReLU(),nn.ReflectionPad2d(1),nn.Conv2d(inc,hiddenc,3,1,padding=0),norm(hiddenc),nn.ReLU()]
+        seq+=[nn.ReflectionPad2d(1),nn.Conv2d(hiddenc,outc,3,1,padding=0)]
+        self.bypass=nn.Conv2d(inc,outc,1,1,0)
+        self.seq=nn.Sequential(*seq)
+
+    def forward(self,x):
+        out=self.seq(x)+self.bypass(x)
+        return out
+
+class Res_TransConv(nn.Module):
+    def __init__(self,inc,outc,hiddenc=None,norm_layer='IN'):
+        super(Res_TransConv,self).__init__()
+        norm=get_Normlayer(norm_layer)
+        hiddenc=inc if hiddenc is None else hiddenc
+        self.model=nn.Sequential(
+            norm(inc),
+            nn.ReLU(),
+            nn.Conv2d(inc,hiddenc,3,1,1),
+            norm(hiddenc),
+            nn.ReLU(),
+            nn.ConvTranspose2d(hiddenc,outc,3,2,1,1),
         )
-        self.layer_blocks = []
-        for _ in range(blocks):
-            self.layer_blocks.append(resblock_conv(outchannel,norm_layer=norm_layer))
-        self.layer_blocks = nn.Sequential(*self.layer_blocks)
+        self.bypass=nn.Sequential(nn.ConvTranspose2d(inc,outc,3,2,1,1))
 
-    def forward(self, x):
-        out = self.flatten(x)
-        out = self.layer_blocks(out)
+    def forward(self,x):
+        out=self.model(x)+self.bypass(x)
         return out
 
-class Layer_up(nn.Module):
-    def __init__(self, inchannel,outchannel, blocks=1,bilinear=False,norm_layer='LN', enc_inc=None):
-        super(Layer_up, self).__init__()
-        enc_inc=inchannel if enc_inc is None else enc_inc
-        if bilinear:
-            self.heighten=nn.Sequential(get_norm_layer(norm_layer)(inchannel),
-                                            get_non_linearity()(),
-                                nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
-                                padding_conv(inchannel,outchannel,3,1,1),
-                                    ) 
-        else:
-            self.heighten = nn.Sequential(resblock_transconv(inchannel,inchannel,norm_layer=norm_layer),
-                                    block_nl_nll_conv(inchannel,outchannel,norm_layer=norm_layer))
-        self.bypass_sc = block_nl_nll_conv(enc_inc,outchannel,3,1,1,norm_layer=norm_layer)
-        self.layer_blocks = []
-        for _ in range(blocks):
-            self.layer_blocks.append(resblock_conv(outchannel,norm_layer=norm_layer))
-        self.layer_blocks = nn.Sequential(*self.layer_blocks)
+#
+class S_Encoder(nn.Module):
+    def __init__(self,inc=3,depth=3,ndf=64,norm_layer='LN'):
+        super(S_Encoder, self).__init__()
+        self.seq=[]
+        self.seq+=[conv_Nolinear(inc,ndf,kernel_size=3,stride=1,padding=1,norm_layer=norm_layer)]
+        for _ in range(depth-1):
+            self.seq.append(conv_Nolinear(ndf,ndf*2,kernel_size=4,stride=2,padding=1,norm_layer=norm_layer))
+            ndf *= 2
+        self.seq+=[nn.Conv2d(ndf,ndf*2,3,1,1)]
+        for _ in range(3):
+            self.seq.append(ResBlock(ndf*2,norm_layer=norm_layer))
+        self.seq+=[nolinear_Conv(ndf*2,ndf*2,3,1,1,norm_layer=norm_layer)]
+        self.seq=nn.Sequential(*self.seq)
+        initialize_weights(self)
 
-    def forward(self, x, cat):
-        y = self.heighten(x)
-        y=y+self.bypass_sc(cat)
-        y = self.layer_blocks(y)
+    def forward(self, x):
+        y=self.seq(x)
         return y
 
-#####################################################################################
-
-
-class Unet_encoder(nn.Module):
-    def __init__(self, inchannel, ndf=32,blocks=1, depth=5,norm_layer='LN'):
-        super(Unet_encoder, self).__init__()
-        self.Inconv=nn.Sequential(padding_conv(inchannel,ndf,7,1,3))
-        self.layer_blocks = []
-        for _ in range(blocks):
-            self.layer_blocks.append(resblock_conv(ndf,norm_layer=norm_layer))
-        self.layer_blocks = nn.Sequential(*self.layer_blocks)
-        self.down_layers = []
-        channel_in=ndf
-        for _ in range(depth - 1):
-            self.down_layers.append(Layer_down(channel_in, channel_in*2, blocks,norm_layer=norm_layer))
-            channel_in=channel_in*2
-        self.down_layers = nn.ModuleList(self.down_layers)
-        initialize_weights(self)
-
-    def __call__(self, x):
-        return self.forward(x)
-
-    def forward(self, x):
-        tmp = []
-        out = self.Inconv(x)
-        out=self.layer_blocks(out)
-        tmp.append(out)
-        for layer in self.down_layers[:-1]:
-            out = layer(out)
-            tmp.append(out)
-        out = self.down_layers[-1](out)
-        return out, tmp
-
-class Unet_decoder(nn.Module):
-    def __init__(self, outchannel,ndf=32, blocks=1, depth=5,bilinear=False,norm_layer='LN'):
-        super(Unet_decoder, self).__init__()
-        self.up_layers = []
-        channel_in=ndf*(2**(depth-1))
-        for _ in range(depth - 1):
-            self.up_layers.append(Layer_up(channel_in, channel_in//2, blocks=blocks,
-                                    bilinear=bilinear,norm_layer=norm_layer,enc_inc=channel_in//2))
-            channel_in=channel_in//2
-        self.up_layers = nn.ModuleList(self.up_layers)
-        self.outconv = nn.Sequential(block_nl_nll_conv(channel_in,outchannel,3,1,1,norm_layer=norm_layer),
-                                           block_nl_nll_conv(outchannel,outchannel,1,1,0,norm_layer=norm_layer),
-                                                )
-        initialize_weights(self)
-
-    def forward(self, x, tmp):
-        out=x
-        for idx, layer in enumerate(self.up_layers):
-            out = layer(out, tmp[-(idx + 1)])
-        out = self.outconv(out)
-        return out
-
-class Unet(nn.Module):
-    def __init__(self, inchannel=3, outchannel=3, ndf=64,enc_blocks=1, dec_blocks=3, depth=5,bilinear=False,norm_layer='LN'):
-        super(Unet, self).__init__()
-        self.e = Unet_encoder(inchannel=inchannel,ndf=ndf,blocks= enc_blocks,depth= depth,norm_layer=norm_layer)
-        self.d = Unet_decoder(outchannel=outchannel,ndf=ndf,blocks= dec_blocks,depth= depth,bilinear=bilinear,norm_layer=norm_layer)
-
-    def forward(self, x):
-        out, temp = self.e(x)
-        out = self.d(out, temp)
-        out=torch.tanh(out)
-        return out
-
-
-######################################################################################
-class Encoder_S(nn.Module):
-    def __init__(self,inc=3,n_downsample=2,ndf=32,norm_layer='LN'):
-        super().__init__()
-        self.Inconv=padding_conv(inc,ndf,7,1,3)
-        channel_in=ndf
-        self.model=list()
-        for _ in range(n_downsample):
-            self.model+=[block_nl_nll_conv(channel_in,channel_in*2,4,2,1,norm_layer=norm_layer)]
-            channel_in=channel_in*2
-        for _ in range(2):
-            self.model+=[resblock_conv(channel_in,norm_layer=norm_layer)]
-        self.model=nn.Sequential(*self.model)
-        self.Outconv=nn.Sequential(block_nl_nll_conv(channel_in,channel_in,1,1,0,norm_layer=norm_layer))
-        self.outc=channel_in
-        self.n_downsample=n_downsample
-        initialize_weights(self)
-
-    def forward(self, x):
-        y=self.Inconv(x)
-        # ho=[]
-        # for layer in self.model:
-        #     y=layer(y)
-        #     ho.append(y)
-        y=self.model(y)
-        y=self.Outconv(y)
-        return y
-
-class Encoder_E(nn.Module):
-    def __init__(self,inc=3,n_downsample=4,outc=8,ndf=64,usekl=True):
-        super().__init__()
+class E_Encoder(nn.Module):
+    def __init__(self,inc=3,depth=4,outc=128,ndf=64,usekl=True,norm_layer='none'):
+        super(E_Encoder, self).__init__()
         self.usekl=usekl
-        self.conv1=block_conv_nl_nll(inc,ndf,7,1,3,norm_layer=None)
+        self.conv1=conv_Nolinear(inc,ndf,4,2,1,norm_layer=norm_layer)
         self.downconv=[]
-        channel_in=ndf
-        for _ in range(2):
-            self.downconv.append(block_conv_nl_nll(channel_in,channel_in*2,4,2,1,norm_layer=None))
-            channel_in*=2
-        for _ in range(n_downsample-2):
-            self.downconv+=[block_conv_nl_nll(channel_in,channel_in,4,2,1,norm_layer=None)]
+        for i in range(depth-1):
+            if outc>=64:
+                x=ndf*(2**i)
+                y=ndf*(2**(i+1))
+            else:
+                x=ndf*(i+1)
+                y=ndf*(i+2)
+            self.downconv.append(conv_Nolinear(x,y,4,2,1,norm_layer=norm_layer))
         self.downconv.append(nn.AdaptiveAvgPool2d(1))
         self.downconv=nn.Sequential(*self.downconv)
         if usekl:
-            self.mean_fc =nn.Linear(channel_in, outc)
-            self.var_fc= nn.Linear(channel_in, outc)
+            self.mean_fc = nn.Sequential(
+                nn.Linear(y, outc),
+            )
+            self.var_fc=nn.Sequential(
+                nn.Linear(y, outc),
+            )
         else:
-            self.fc= nn.Linear(channel_in, outc)
+            self.fc=nn.Sequential(
+                nn.Linear(y, outc),
+            )
         initialize_weights(self)
 
     def forward(self, x):
@@ -359,38 +174,196 @@ class Encoder_E(nn.Module):
             y=self.fc(y)
             return y
 
-class Decoder_SE(nn.Module):
-    def __init__(self,s_inc=128,e_inc=8,outc=3,n_upsample=2,norm_layer='LN'):
-        super().__init__()
-        inc=s_inc
+class SE_Decoder(nn.Module):
+    def __init__(self,inc=512,e_inc=16,outc=3,depth=3,norm_layer='LN'):
+        super(SE_Decoder, self).__init__()
         self.adin=ADAIN(inc,e_inc)
-        self.model=[]
-        self.model+=[padding_conv(inc,inc,1,1,0),resblock_conv(inc,norm_layer=norm_layer)]
-        channel_in=inc
-        for _ in range(n_upsample):
-            self.model+=[resblock_transconv(channel_in,channel_in//2,norm_layer=norm_layer)]
-            channel_in=channel_in//2
-        self.model=nn.Sequential(*self.model)
+        self.seq=[]
+        self.seq+=[nn.Conv2d(inc,inc,3,1,1)]
+        for _ in range(3):
+            self.seq.append(ResBlock(inc,norm_layer=norm_layer))
+        self.seq+=[nolinear_Conv(inc,inc//2,3,1,1,norm_layer=norm_layer)]
+        inc=inc//2
+        for _ in range(depth-1):
+            self.seq+=[Res_TransConv(inc,inc//2,norm_layer=norm_layer)]
+            inc=inc//2
+        self.seq=nn.Sequential(*self.seq)
         self.outconv = nn.Sequential(
-            block_nl_nll_conv(channel_in,outc,3,1,1,norm_layer=norm_layer),
+            nolinear_Conv(inc,outc,3,1,1,norm_layer=norm_layer),
+            nn.Tanh(),
         )
         initialize_weights(self)
 
     def forward(self, x1,x2):
         out = self.adin(x1, x2)
-        out=self.model(out)
+        out=F.leaky_relu(out)
+        out=self.seq(out)
         out=self.outconv(out)
-        out=torch.tanh(out)
         return out
 
-#######################################################################################
+#
+class DownLayer(nn.Module):
+    def __init__(self, inchannel, outchannel, blocks=1,norm_layer='LN'):
+        super(DownLayer, self).__init__()
+        self.seq1 = nn.Sequential(
+            get_Normlayer(norm_layer)(inchannel),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(inchannel,outchannel,3,1,1),
+        )
+        if blocks >= 0:
+            self.seq2 = []
+            for _ in range(blocks):
+                self.seq2.append(ResBlock(outchannel,norm_layer=norm_layer))
+            self.seq2 = nn.Sequential(*self.seq2)
+        else:
+            self.seq2=nolinear_Conv(outchannel,outchannel,kernel_size=3,stride=1,padding=1,norm_layer=norm_layer)
+
+    def forward(self, x):
+
+        out = self.seq1(x)
+        out = self.seq2(out)
+        return out
+
+
+class UpLayer(nn.Module):
+    def __init__(self, inchannel, outchannel, blocks=1, concat=False,bilinear=False,norm_layer='LN'):
+        super(UpLayer, self).__init__()
+        self.concat=concat
+        if self.concat:
+            if bilinear:
+                self.upconv=nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            else:
+                self.upconv = Res_TransConv(inchannel//2,inchannel//2,norm_layer=norm_layer)
+        else:
+            if bilinear:
+                self.upconv=nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            else:
+                self.upconv = Res_TransConv(inchannel,inchannel,norm_layer=norm_layer)
+            self.enc_conv = nolinear_Conv(inchannel,inchannel,3,1,1,norm_layer=norm_layer)
+        self.seq1=nolinear_Conv(inchannel, outchannel, kernel_size=3, stride=1, padding=1,norm_layer=norm_layer)
+        if blocks >= 0:
+            self.seq2 = []
+            for _ in range(blocks):
+                self.seq2.append(ResBlock(outchannel,norm_layer=norm_layer))
+            self.seq2 = nn.Sequential(*self.seq2)
+        else:
+            self.seq2=nolinear_Conv(outchannel,outchannel,kernel_size=3,stride=1,padding=1,norm_layer=norm_layer)
+
+    def forward(self, x, cat):
+        out = self.upconv(x)
+        if self.concat:
+            out = torch.cat([out, cat], dim=1)
+        else:
+            out=out+self.enc_conv(cat)
+        out = self.seq1(out)
+        out = self.seq2(out)
+        return out
+
+
+#
+class Encod(nn.Module):
+    def __init__(self, inchannel, ndf=32,blocks=1, depth=5,norm_layer='LN'):
+        super(Encod, self).__init__()
+        self.conv1=nn.Sequential(nn.ReflectionPad2d(3),
+                                 nn.Conv2d(inchannel,ndf,7,1,0))
+        if blocks >= 0:
+            self.conv2 = []
+            for _ in range(blocks):
+                self.conv2.append(ResBlock(ndf,norm_layer=norm_layer))
+            self.conv2 = nn.Sequential(*self.conv2)
+        else:
+            self.conv2 = nolinear_Conv(ndf,ndf,3,1,1,norm_layer=norm_layer)
+        self.downconv = []
+        for i in range(depth - 2):
+            self.downconv.append(DownLayer(ndf * 2 ** (i), ndf * 2 ** (i + 1), blocks,norm_layer=norm_layer))
+        self.downconv = nn.ModuleList(self.downconv)
+        self.finaldown = DownLayer(ndf * 2 ** (depth - 2), ndf * 2 ** (depth - 2), blocks,norm_layer=norm_layer)
+        initialize_weights(self)
+
+    def __call__(self, x):
+        return self.forward(x)
+
+    def forward(self, x):
+        temp = []
+        out = self.conv1(x)
+        out=self.conv2(out)
+        temp.append(out)
+        for idx, layer in enumerate(self.downconv):
+            out = layer(out)
+            temp.append(out)
+        out = self.finaldown(out)
+        return out, temp
+
+
+class Decod(nn.Module):
+    def __init__(self, outchannel,ndf=32, blocks=1, depth=5,concat=False,bilinear=False,norm_layer='LN'):
+        super(Decod, self).__init__()
+        self.upconv = []
+        self.concat=concat
+        if concat:
+            for i in range(depth - 2):
+                self.upconv.append(UpLayer(ndf * 2 ** (depth - i - 1), ndf * 2 ** (depth - i - 3), blocks=blocks,concat=concat,bilinear=bilinear,norm_layer=norm_layer))
+            self.upconv2 = UpLayer(ndf * 2, ndf, blocks=blocks, concat=concat, bilinear=bilinear,norm_layer=norm_layer)
+            self.conv=nolinear_Conv(ndf,outchannel,kernel_size=3,stride=1,padding=1,norm_layer=norm_layer)
+            self.resblocks = []
+            for _ in range(blocks):
+                self.resblocks.append(ResBlock(outchannel,norm_layer=norm_layer))
+            self.resblocks = nn.Sequential(*self.resblocks)
+        else:
+            for i in range(depth - 2):
+                self.upconv.append(UpLayer(ndf * 2 ** (depth - i - 2), ndf * 2 ** (depth - i - 3), blocks=blocks,concat=concat,bilinear=bilinear,norm_layer=norm_layer))
+            self.upconv2 = UpLayer(ndf, ndf, blocks=blocks, concat=concat, bilinear=bilinear,norm_layer=norm_layer)
+        self.upconv = nn.ModuleList(self.upconv)
+
+        self.final = nn.Sequential(nolinear_Conv(outchannel,outchannel,3,1,1,norm_layer=norm_layer),nn.Tanh())
+        initialize_weights(self)
+
+    def forward(self, x, temp):
+        out=x
+        for idx, layer in enumerate(self.upconv):
+            out = layer(out, temp[-(idx + 1)])
+        out = self.upconv2(out, temp[0])
+        if self.concat:
+            out=self.conv(out)
+            out=self.resblocks(out)
+        out = self.final(out)
+        return out
+
+class Unet(nn.Module):
+    def __init__(self, inchannel=3, outchannel=3, ndf=64,enc_blocks=1, dec_blocks=3, depth=5,concat=False,bilinear=False,norm_layer='LN'):
+        super(Unet, self).__init__()
+        self.enc = Encod(inchannel=inchannel,ndf=ndf,blocks= enc_blocks,depth= depth,norm_layer=norm_layer)
+        self.dec = Decod(outchannel=outchannel,ndf=ndf,blocks= dec_blocks,depth= depth,concat=concat,bilinear=bilinear,norm_layer=norm_layer)
+
+    def __call__(self, input):
+        return self.forward(input)
+
+    def forward(self, input):
+        out, temp = self.enc(input)
+        out = self.dec(out, temp)
+        return out
+
+
+#
+def initialize_weights(net):
+    for m in net.modules():
+        if isinstance(m, nn.Conv2d):
+            nn.init.xavier_normal_(m.weight)
+            m.bias.data.zero_()
+        elif isinstance(m, nn.ConvTranspose2d):
+            nn.init.xavier_normal_(m.weight)
+            m.bias.data.zero_()
+        elif isinstance(m, nn.Linear):
+            nn.init.xavier_normal_(m.weight)
+            m.bias.data.zero_()
 
 #VGG 19
 class VGG19(torch.nn.Module):
     def __init__(self):
         super(VGG19, self).__init__()
         vgg=models.vgg19()
-        vgg.load_state_dict(torch.load('./checkpoints/vgg19/vgg19-dcbb9e9d.pth',map_location=torch.device('cpu')))
+        vgg.load_state_dict(torch.load('./checkpoints/vgg19/vgg19-dcbb9e9d.pth'))
         features = vgg.features
         self.relu1_1 = torch.nn.Sequential()
         self.relu1_2 = torch.nn.Sequential()
@@ -509,4 +482,40 @@ class VGG19(torch.nn.Module):
             'relu5_3': relu5_3,
             'relu5_4': relu5_4,
         }
+        return out
+
+#adain
+class ADAIN(nn.Module):
+    def __init__(self, norm_nc, feature_nc):
+        super().__init__()
+
+        self.param_free_norm = nn.InstanceNorm2d(norm_nc, affine=False)
+
+        # The dimension of the intermediate embedding space. Yes, hardcoded.
+        nhidden = 128
+        use_bias=True
+
+        self.mlp_shared = nn.Sequential(
+            nn.Linear(feature_nc, nhidden, bias=use_bias),
+            nn.ReLU()
+        )
+        self.mlp_gamma = nn.Linear(nhidden, norm_nc, bias=use_bias)
+        self.mlp_beta = nn.Linear(nhidden, norm_nc, bias=use_bias)
+
+    def forward(self, x, feature):
+
+        # Part 1. generate parameter-free normalized activations
+        normalized = self.param_free_norm(x)
+
+        # Part 2. produce scaling and bias conditioned on feature
+        feature = feature.view(feature.size(0), -1)
+        actv = self.mlp_shared(feature)
+        gamma = self.mlp_gamma(actv)
+        beta = self.mlp_beta(actv)
+
+        # apply scale and bias
+        gamma = gamma.view(*gamma.size()[:2], 1,1)
+        beta = beta.view(*beta.size()[:2], 1,1)
+        out = normalized * (1 + gamma) + beta
+
         return out

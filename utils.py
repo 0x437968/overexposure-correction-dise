@@ -11,13 +11,11 @@ def load_image(path,resize=False,size=256):
     if resize :
         im=im.resize((size,size),Image.BICUBIC)
     im = np.array(im)
+    im = im.astype(np.float32)
+    im = im / 255
     if len(im.shape) != 3:
-        im = im.astype(np.float32)
-        im = im / 255
         im = np.expand_dims(im, 0)
     else:
-        im = im.astype(np.float32)
-        im = im / 127.5 - 1
         im = np.transpose(im, (2, 0, 1))
     return im
 
@@ -45,8 +43,8 @@ def _unfreeze(*args):
 
 def transform_to_numpy(tensor_):
     im = tensor_.detach_().cpu().numpy()
+    im = im / 2 + 0.5
     if im.shape[1] == 3:
-        im = im / 2 + 0.5
         im = np.transpose(im, (0, 2, 3, 1))
     else:
         im=np.squeeze(im)
@@ -77,3 +75,4 @@ def find_class_in_module(target_cls_name, module):
         exit(0)
 
     return cls
+

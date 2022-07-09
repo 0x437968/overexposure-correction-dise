@@ -13,16 +13,18 @@ class RECO(BaseModel):
         BaseModel.__init__(self,opt)
         self.net_names=['G']
         self.net_G=Unet(inchannel=3,outchannel=3,
-                        ndf=64,enc_blocks=2,dec_blocks=2,depth=3,
-                        bilinear=self.opt.bilinear,norm_layer='LN')
+                        ndf=64,enc_blocks=1,dec_blocks=1,depth=3,
+                        concat=True,bilinear=self.opt.bilinear,norm_layer='LN')
         if self.isTrain:
             self.loss_names=['G_ad_gen','D','G','G_style','G_scene']
             self.net_names+=['D']
             self.net_D = ResDiscriminator(ndf=32, img_f=128, layers=4,use_spect=True)
             self.GANloss=AdversarialLoss('lsgan').to(self.device)
             self.Styleloss=vgg_style_loss().to(self.device)
-            self.sceneloss=scene_loss('./checkpoints/net_E_s.path').to(self.device)
-            self.set_Adam_optims(self.net_names)
+            self.sceneloss=scene_loss(self.opt.scenepath).to(self.device)
+            
+            self.optim_G=torch.optim.Adam(self.net_G.parameters(),lr=opt.lr,betas=(0.0,0.999))
+            self.optim_D=torch.optim.Adam(self.net_D.parameters(),lr=opt.lr*opt.lrg2d,betas=(0.0,0.999))
 
     @staticmethod
     def modify_options(parser):
@@ -34,6 +36,7 @@ class RECO(BaseModel):
             parser.add_argument('--gamma_scene', type=float, default=10000.0, help='weight for scene loss')
             parser.add_argument('--gamma_style', type=float, default=2000.0, help='weight for style loss')
             parser.add_argument('--gamma_gen', type=float, default=2.0, help='weight for generation loss')
+            parser.add_argument('--scenepath',  default='./checkpoints/net_E_s.path', help='scene encoder path')
 
             parser.add_argument('--dir_in',  default='over', help='over-exposure images diretory')
             parser.add_argument('--dir_gt',  default='gt', help='ground truth images diretory')

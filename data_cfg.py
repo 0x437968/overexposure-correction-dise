@@ -6,8 +6,9 @@ import random
 import torch
 import re 
 import torchvision.transforms as transforms
+from LECRM import CameraModel
 
-class project_dataset(Dataset):
+class Project_Dataset(Dataset):
 
     def __init__(self, opt):
         self.patch_size=opt.patch_size
@@ -24,22 +25,26 @@ class project_dataset(Dataset):
         data=dict()        
         if self.train:
             if self.opt.model == 'dise':
-                im1_path,im2_path, im3_path= self.path[index]
-                n1=os.path.basename(im1_path)
-                n2=os.path.basename(im2_path)
-                n3=os.path.basename(im3_path)
-                im1 = utils.load_image(im1_path)
-                im2 = utils.load_image(im2_path)
-                im3 = utils.load_image(im3_path)
+
+                im_path= self.path[index]
+                ext=os.path.splitext(im_path)[-1]
+                n1=os.path.basename(im_path).replace(ext,'_1'+ext)
+                n2=os.path.basename(im_path).replace(ext,'_2'+ext)
+                n3=os.path.basename(im_path).replace(ext,'_3'+ext)
+                im = utils.load_image(im_path)
                 if self.patch_size:
-                    im1,im2,im3=self.crop_images(im1,im2,im3)
+                    im=self.crop_images(im)[0]
+                model=CameraModel()
+                im1 = (model.adjust(im,random.uniform(0.3,0.65)))*2-1.0
+                im2 = (model.adjust(im,random.uniform(0.65,0.9)))*2-1.0
+                im3 = im*2-1.0
                 data['imseq']=[im1,im2,im3]
                 data['nameseq']=[n1,n2,n3]
                 
             if self.opt.model == 'reco':
                 gt_path, over_path = self.path[index]
-                gt = utils.load_image(gt_path)
-                over = utils.load_image(over_path)
+                gt = utils.load_image(gt_path)*2-1.0
+                over = utils.load_image(over_path)*2-1.0
                 n=os.path.basename(gt_path)
                 if self.patch_size:
                     gt,over=self.crop_images(gt,over)
@@ -50,15 +55,15 @@ class project_dataset(Dataset):
             if self.opt.model == 'dise':
                 test_path,e_path = self.path[index]
                 name = os.path.basename(test_path)
-                test = utils.load_image(test_path)
-                e= utils.load_image(e_path)
+                test = utils.load_image(test_path)*2-1.0
+                e= utils.load_image(e_path)*2-1.0
                 data['test']=test
                 data['expo']=e
                 data['name']=name
             if 'reco' in self.opt.model :
                 test_path = self.path[index]
                 name = os.path.basename(test_path)
-                test = utils.load_image(test_path)
+                test = utils.load_image(test_path)*2-1.0
                 data['test']=test
                 data['name']=name
         return data 
@@ -67,18 +72,18 @@ class project_dataset(Dataset):
         return len(self.path)
 
     def crop_images(self, *images):
-        sizex = images[0].shape[1]
-        sizey=images[0].shape[2]
-        left_most = random.randint(0, sizex - self.patch_size)
-        top_most = random.randint(0, sizey - self.patch_size)
+        h = images[0].shape[1]
+        w=images[0].shape[2]
+        h_most = random.randint(0, h - self.patch_size)
+        w_most = random.randint(0, w - self.patch_size)
         cropped = []
         for image in images:
             if type(image) is not list:
-                cropped.append(image[:, left_most: left_most + self.patch_size, top_most: top_most + self.patch_size])
+                cropped.append(image[:, h_most: h_most + self.patch_size, w_most: w_most + self.patch_size])
             else:
                 seq=[]
                 for im in image:
-                    seq.append(im[:, left_most: left_most + self.patch_size, top_most: top_most + self.patch_size])
+                    seq.append(im[:, h_most: h_most + self.patch_size, w_most: w_most + self.patch_size])
                 cropped.append(seq)
         return cropped
 
@@ -86,15 +91,10 @@ class project_dataset(Dataset):
         pathlist = []
         if self.opt.model=='dise':
             if self.train:
-                dir_gt = os.path.join(self.opt.data_root, self.opt.dir_gt)
                 dir_in = os.path.join(self.opt.data_root, self.opt.dir_in)
-                for x in os.listdir(dir_gt):
-                    n1 = x.replace('.', '_1.')
-                    n2 = x.replace('.', '_2.')
-                    n3 = x.replace('.', '_3.')
-                    pathlist.append([os.path.join(dir_in, n1),
-                                     os.path.join(dir_in, n2),
-                                     os.path.join(dir_in, n3)])
+                for x in os.listdir(dir_in):
+                    pathlist.append(os.path.join(dir_in, x))
+
             else:
                 test_dir = os.path.join(self.opt.data_root, self.opt.dir_in)
                 e_path = os.path.join(self.opt.data_root, self.opt.path_e)

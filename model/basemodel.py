@@ -36,15 +36,6 @@ class BaseModel():
     def clear_sumloss(self):
         pass
 
-    def set_Adam_optims(self,optimnames):
-        for n in optimnames:
-            lr=self.opt.lr
-            if n == 'D':
-                lr*=self.opt.lrg2d
-            net=getattr(self,'net_'+n)
-            setattr(self,'optim_'+n,torch.optim.Adam(net.parameters(),lr=lr,betas=(0.0,0.999)))
-            
-
     # save models
     def save_networks(self):
         """Save all the networks to the disk"""

@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from model.network.components import VGG19,encoder_s
+from model.network.components import VGG19,S_Encoder
 import utils
 
 
@@ -52,7 +52,7 @@ class vgg_style_loss(nn.Module):
 class scene_loss(nn.Module):
     def __init__(self,path):
         super(scene_loss,self).__init__()
-        self.E_s=encoder_s(norm_layer='LN')
+        self.E_s=S_Encoder()
         try:
             self.E_s.load_state_dict(torch.load(path,map_location=torch.device('cpu')))
             print('load %s' %path)

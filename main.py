@@ -1,4 +1,4 @@
-from data_cfg import project_dataset
+from data_cfg import Project_Dataset
 from tensorboardX import SummaryWriter
 from utils import init_folder
 from options import ProjectOptions
@@ -12,7 +12,7 @@ if __name__ == '__main__':
     ProjectOptions.print_options(opt)
     nets_path=os.path.join(opt.checkpoints_dir,opt.model+'_'+opt.name)
     init_folder(nets_path,opt.im_save_dir)
-    data_set = project_dataset(opt)
+    data_set = Project_Dataset(opt)
     data_loader = torch.utils.data.DataLoader(data_set, batch_size=opt.batch_size, shuffle=True)
     length=len(data_loader)
     model=create_model(opt)
@@ -20,9 +20,9 @@ if __name__ == '__main__':
     if opt.print_net:
         model.print_networks()
     if opt.phase=='train':
-        log_dir=os.path.join('./log',opt.model+'_'+opt.name)
-        init_folder( './log')
-        print('Start training....')
+        log_dir=os.path.join(nets_path,'./log')
+        init_folder(log_dir)
+        print('Start train')
         writer = SummaryWriter(log_dir)
         for e in range(opt.epochs):
             epoch=e+1
@@ -38,23 +38,14 @@ if __name__ == '__main__':
                     model.save_results()
             if epoch%opt.net_save_freq==0:
                 model.save_networks()
-        print('Training over')
+        print('End')
 
     if opt.phase=='test':
-        print('Current: ', time.asctime(time.localtime(time.time())))
-        print('Start testing')
-        t=0.0
-        l=0.0
+        print('Start test')
         for i,data in enumerate(data_loader,0):
-            l+=data['test'].size()[0]
             model.set_input(data)
-            f1t=time.time()
             model.forward()
-            f2t=time.time()
-            t+=(f2t-f1t)
             model.save_results()
-        print('Testing over')
-        print('Current: ', time.asctime(time.localtime(time.time())))
-        print('Average inference latency for one frame: %.4fs'%(t/l))
+        print('End')
 
 
